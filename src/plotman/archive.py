@@ -48,25 +48,13 @@ def compute_priority(phase, gb_free, n_plots):
     return priority
 
 def get_archdir_freebytes(arch_cfg):
-    archdir_freebytes = {}
-    df_cmd = ('ssh %s@%s df -aBK | grep " %s/"' %
-        (arch_cfg.rsyncd_user, arch_cfg.rsyncd_host, arch_cfg.rsyncd_path) )
-    with subprocess.Popen(df_cmd, shell=True, stdout=subprocess.PIPE) as proc:
-        for line in proc.stdout.readlines():
-            fields = line.split()
-            if fields[3] == b'-':
-                # not actually mounted
-                continue
-            freebytes = int(fields[3][:-1]) * 1024  # Strip the final 'K'
-            archdir = (fields[5]).decode('ascii')
-            archdir_freebytes[archdir] = freebytes
-    return archdir_freebytes
+    return {'stub': 1024**3}
 
-def rsync_dest(arch_cfg, arch_dir):
-    rsync_path = arch_dir.replace(arch_cfg.rsyncd_path, arch_cfg.rsyncd_module)
+def rsync_dest(arch_cfg):
+    rsync_path = arch_cfg.rsyncd_path
     if rsync_path.startswith('/'):
         rsync_path = rsync_path[1:]  # Avoid dup slashes.  TODO use path join?
-    rsync_url = 'rsync://%s@%s:12000/%s' % (
+    rsync_url = 'rsync://%s@%s/%s' % (
             arch_cfg.rsyncd_user, arch_cfg.rsyncd_host, rsync_path)
     return rsync_url
 
@@ -110,31 +98,7 @@ def archive(dir_cfg, all_jobs):
     if not chosen_plot:
         return (False, 'No plots found')
 
-    # TODO: sanity check that archive machine is available
-    # TODO: filter drives mounted RO
-
-    #
-    # Pick first archive dir with sufficient space
-    #
-    archdir_freebytes = get_archdir_freebytes(dir_cfg.archive)
-    if not archdir_freebytes:
-        return(False, 'No free archive dirs found.')
-    
-    archdir = ''
-    available = [(d, space) for (d, space) in archdir_freebytes.items() if 
-                 space > 1.2 * plot_util.get_k32_plotsize()]
-    if len(available) > 0:
-        index = min(dir_cfg.archive.index, len(available) - 1)
-        (archdir, freespace) = sorted(available)[index]
-
-    if not archdir:
-        return(False, 'No archive directories found with enough free space')
-    
-    msg = 'Found %s with ~%d GB free' % (archdir, freespace / plot_util.GB)
-
-    bwlimit = dir_cfg.archive.rsyncd_bwlimit
-    throttle_arg = ('--bwlimit=%d' % bwlimit) if bwlimit else ''
-    cmd = ('rsync %s --remove-source-files -P %s %s' %
-            (throttle_arg, chosen_plot, rsync_dest(dir_cfg.archive, archdir)))
+    cmd = ('rsync --remove-source-files -P %s %s' %
+            (chosen_plot, rsync_dest(dir_cfg.archive)))
 
     return (True, cmd)
